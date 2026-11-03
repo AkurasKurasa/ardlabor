@@ -15,7 +15,7 @@ ViroMaterials.createMaterials({
   arWhite: { diffuseColor: "#ffffff", lightingModel: "Constant" },
   arGreen: { diffuseColor: "#34c759", lightingModel: "Constant" },
   arRed: { diffuseColor: "#ff453a", lightingModel: "Constant" },
-  arAmber: { diffuseColor: "#ffd60a", lightingModel: "Constant" },
+  arAmber: { diffuseColor: "#ff6b2c", lightingModel: "Constant" },
 });
 
 function circle(r: number, n = 28): V3[] {
@@ -28,6 +28,7 @@ function circle(r: number, n = 28): V3[] {
 }
 const RING = circle(0.012);
 const RING2 = circle(0.018);
+const RING_SMALL = circle(0.007);
 
 /**
  * Draws on the real cabinet: tapped corners, the door outline, every gap reading
@@ -88,6 +89,25 @@ export default function CabinetScene() {
         </ViroNode>
       ))}
 
+      {s.markers.map((m) => {
+        const mat = m.state === "active" ? "arAmber" : m.state === "issue" ? "arRed" : "arWhite";
+        const col = m.state === "active" ? "#ff6b2c" : m.state === "issue" ? "#ff453a" : "#ffffff";
+        return (
+          <ViroNode key={m.id} position={m.pos} transformBehaviors={["billboard"]}>
+            <ViroPolyline points={m.state === "idle" ? RING_SMALL : RING} thickness={m.state === "idle" ? 0.0012 : 0.0022} materials={[mat]} />
+            {m.state !== "idle" && <ViroPolyline points={RING2} thickness={0.0012} materials={[mat]} />}
+            <ViroText
+              text={m.label}
+              position={[0, m.state === "idle" ? 0.018 : 0.034, 0]}
+              scale={m.state === "idle" ? [0.04, 0.04, 0.04] : [0.06, 0.06, 0.06]}
+              style={{ fontSize: 24, color: col, textAlign: "center" }}
+              width={3}
+              height={0.6}
+            />
+          </ViroNode>
+        );
+      })}
+
       {s.screw && (
         <ViroNode position={s.screw.pos} transformBehaviors={["billboard"]}>
           <ViroPolyline points={RING} thickness={0.002} materials={["arAmber"]} />
@@ -96,7 +116,7 @@ export default function CabinetScene() {
             text={`${s.screw.turn === "cw" ? "↻" : "↺"} ${s.screw.label}`}
             position={[0, 0.04, 0]}
             scale={[0.07, 0.07, 0.07]}
-            style={{ fontSize: 24, color: "#ffd60a", textAlign: "center" }}
+            style={{ fontSize: 24, color: "#ff6b2c", textAlign: "center" }}
             width={3}
             height={0.6}
           />

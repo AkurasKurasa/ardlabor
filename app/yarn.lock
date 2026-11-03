@@ -973,6 +973,11 @@
     "@eslint/core" "^0.17.0"
     levn "^0.4.1"
 
+"@expo-google-fonts/ibm-plex-sans@0.4.1":
+  version "0.4.1"
+  resolved "https://registry.yarnpkg.com/@expo-google-fonts/ibm-plex-sans/-/ibm-plex-sans-0.4.1.tgz#950301c395e0f436c0c8726af8ee9d91b9b018f7"
+  integrity sha512-allsuhZbvKoKDTB/U8creFVYYzhI97Nw9MgyyNjFzqISNc/sURpA7ZY37Rr+IRI567OV9BWQ/ioUCjAQrVGRbw==
+
 "@expo-google-fonts/material-symbols@^0.4.1":
   version "0.4.36"
   resolved "https://registry.npmjs.org/@expo-google-fonts/material-symbols/-/material-symbols-0.4.36.tgz"
@@ -3311,6 +3316,11 @@ expo-keep-awake@~57.0.2:
   resolved "https://registry.yarnpkg.com/expo-keep-awake/-/expo-keep-awake-57.0.2.tgz#ce266252ad478523bb3431d40f67bd643f86bd9c"
   integrity sha512-GqgH746wtJImmsbyHmCQoi7cOslKuWQBbJHXr53S35Bpf5UvxCAztvnitUEd7D0QvFN2rvkOhylbZpgZZfBLlQ==
 
+expo-linear-gradient@~57.0.2:
+  version "57.0.2"
+  resolved "https://registry.yarnpkg.com/expo-linear-gradient/-/expo-linear-gradient-57.0.2.tgz#a9d85700cd822678556a6166640b0240d31fe011"
+  integrity sha512-eGNSfcbdXYvw0B/TQ3nmXKQgj0jLUi3EgsXGlvI79rlXg5RR5dQTkY2yqkf7BQDM3PMd3tqBMZdsLhvBqSUaMg==
+
 expo-linking@~57.0.11:
   version "57.0.11"
   resolved "https://registry.yarnpkg.com/expo-linking/-/expo-linking-57.0.11.tgz#49bd06c942afd4094f73fac523c249702ea46ecb"
@@ -3375,6 +3385,11 @@ expo-router@~57.0.24:
     shallowequal "^1.1.0"
     standard-navigation "^0.0.5"
     vaul "^1.1.2"
+
+expo-secure-store@~57.0.0:
+  version "57.0.4"
+  resolved "https://registry.yarnpkg.com/expo-secure-store/-/expo-secure-store-57.0.4.tgz#a5eefc7490d1de26fd62e83bc5fdceacd94f5342"
+  integrity sha512-7zBA1RThURTXdP4w65kBzZNbcSsfArqVd+p+ETAnPRWXO8J296Qd0YaCVyRpJ0HSwlCnGdvOnqO+NgSreHsOhA==
 
 expo-server@^57.0.3:
   version "57.0.3"

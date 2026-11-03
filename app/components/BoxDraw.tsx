@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
-import { C } from "./ui";
+import { C, T } from "./ui";
 
 export type Box = { x0: number; y0: number; x1: number; y1: number }; // screen points (dp), normalised
 
@@ -44,13 +44,13 @@ export default function BoxDraw({ box, onDraw, hint }: { box: Box | null; onDraw
 
 const K = 18;
 const s = StyleSheet.create({
-  box: { position: "absolute", borderWidth: 1.5, borderColor: "rgba(255,214,10,0.6)", backgroundColor: "rgba(255,214,10,0.06)" },
+  box: { position: "absolute", borderWidth: 1, borderColor: "rgba(255,107,44,0.55)" },
   boxLive: { borderStyle: "dashed" },
-  corner: { position: "absolute", width: K, height: K, borderColor: C.accent },
-  tl: { left: -2, top: -2, borderLeftWidth: 4, borderTopWidth: 4 },
-  tr: { right: -2, top: -2, borderRightWidth: 4, borderTopWidth: 4 },
-  br: { right: -2, bottom: -2, borderRightWidth: 4, borderBottomWidth: 4 },
-  bl: { left: -2, bottom: -2, borderLeftWidth: 4, borderBottomWidth: 4 },
-  hintWrap: { position: "absolute", top: "38%", left: 0, right: 0, alignItems: "center" },
-  hint: { color: C.accent, fontSize: 15, fontWeight: "700", backgroundColor: "rgba(0,0,0,0.45)", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, overflow: "hidden" },
+  corner: { position: "absolute", width: K, height: K, borderColor: C.signal },
+  tl: { left: -1, top: -1, borderLeftWidth: 2, borderTopWidth: 2 },
+  tr: { right: -1, top: -1, borderRightWidth: 2, borderTopWidth: 2 },
+  br: { right: -1, bottom: -1, borderRightWidth: 2, borderBottomWidth: 2 },
+  bl: { left: -1, bottom: -1, borderLeftWidth: 2, borderBottomWidth: 2 },
+  hintWrap: { position: "absolute", top: "46%", left: 0, right: 0, alignItems: "center" },
+  hint: { color: C.text, ...T.body, textShadowColor: "rgba(0,0,0,0.55)", textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 } },
 });

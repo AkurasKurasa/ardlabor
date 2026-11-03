@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Image, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent } from "react-native";
-import { Btn, C, Eyebrow, Notice } from "./ui";
+import { Btn, C, IconBtn, T } from "./ui";
 import type { Pt } from "@core/gapscan";
 
 type Props = {
@@ -9,17 +9,13 @@ type Props = {
   corners: Pt[]; // in image pixels
   onConfirm: (corners: Pt[]) => void;
   onRetake: () => void;
-  hint?: string;
-  notice?: string | null;
 };
-
-const AR_HINT = "Drag each cross onto the exact corner of the door face. Corners outside the picture stay where AR put them.";
 
 const HANDLE = 44;
 type Drag = { i: number; start: Pt; x0: number; y0: number } | null;
 
 /** Shows the captured frame with the 4 door corners as handles you can drag onto the exact corner. */
-export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRetake, hint = AR_HINT, notice }: Props) {
+export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRetake }: Props) {
   const [pts, setPts] = useState<Pt[]>(corners);
   const [box, setBox] = useState({ w: 1, h: 1 });
   const [drag, setDrag] = useState<Drag>(null);
@@ -41,7 +37,7 @@ export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRet
   const onLayout = (e: LayoutChangeEvent) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
 
   return (
-    <View style={styles.fill}>
+    <View style={[styles.fill, { flexDirection: "row" }]}>
       <View style={styles.fill} onLayout={onLayout}>
         <Image source={{ uri }} style={styles.fill} resizeMode="contain" />
         {pts.map((p, i) =>
@@ -61,12 +57,10 @@ export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRet
         )}
       </View>
       <View style={styles.bar}>
-        <Eyebrow icon="vector-square-edit">Check the corners</Eyebrow>
-        {notice && <Notice>{notice}</Notice>}
-        <Text style={styles.hint}>{hint}</Text>
+        <Text style={styles.hint}>Drag the crosses onto the corners</Text>
         <View style={styles.row}>
-          <Btn label="Retake" icon="camera-retake" kind="secondary" onPress={onRetake} />
-          <Btn label="Measure gaps" icon="ruler" onPress={() => onConfirm(pts)} />
+          <IconBtn icon="camera-retake" label="Retake" onPress={onRetake} />
+          <Btn label="Measure" onPress={() => onConfirm(pts)} />
         </View>
       </View>
     </View>
@@ -76,9 +70,9 @@ export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRet
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: "#000" },
   handle: { position: "absolute", width: HANDLE, height: HANDLE, alignItems: "center", justifyContent: "center",
-    borderRadius: HANDLE / 2, borderWidth: 2, borderColor: "#ffd60a", backgroundColor: "rgba(255,214,10,0.12)" },
-  cross: { position: "absolute", width: HANDLE * 0.7, height: 2, backgroundColor: "#ffd60a" },
-  bar: { padding: 18, gap: 12, backgroundColor: C.glass, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-  hint: { color: C.sub, fontSize: 15, lineHeight: 21 },
+    borderRadius: HANDLE / 2, borderWidth: 2, borderColor: "#ff6b2c", backgroundColor: "transparent" },
+  cross: { position: "absolute", width: HANDLE * 0.7, height: 2, backgroundColor: "#ff6b2c" },
+  bar: { width: 300, paddingHorizontal: 24, gap: 14, justifyContent: "center", backgroundColor: "#000" },
+  hint: { color: C.text, ...T.title },
   row: { flexDirection: "row", gap: 12 },
 });

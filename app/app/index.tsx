@@ -1,420 +1,358 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Image, PixelRatio, Pressable, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Keyboard, PixelRatio, Pressable, StyleSheet, Text, TextInput, View,
   type GestureResponderEvent, type LayoutChangeEvent,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { ViroARSceneNavigator } from "@reactvision/react-viro";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import CabinetScene from "@/components/CabinetScene";
-import CornerEditor from "@/components/CornerEditor";
-import { Body, Btn, C, IconBtn, LinkBtn, Notice, Progress, Reticle, Row, Sheet, Small, Title, Toggle } from "@/components/ui";
-import { DoorGapDiagram, HingeDiagram, TurnBadge } from "@/components/Diagrams";
-import { cameraPosition, hitTest, sceneStore, useSceneState, type GapLabel, type V3 } from "@/lib/store";
-import { doorPoint, doorSizeMm, orderWorldCorners } from "@/lib/geom";
-import { measureShot, mergeMeasurements, fileUri } from "@/lib/measure";
-import { MEASUREMENTS, readingAnchorMm, type HingeSide, type Pt } from "@core/gapscan";
+import CabinetFlow from "@/components/CabinetFlow";
+import BoxDraw, { type Box } from "@/components/BoxDraw";
+import { T, Body, Btn, Bubble, C, IconBtn, LinkBtn, Notice, Row, Sheet, Small, Title } from "@/components/ui";
+import { hitTest, sceneStore, useSceneState, type StepMarker } from "@/lib/store";
+import { askGemini, GeminiError } from "@/lib/gemini";
+import { getApiKey, setApiKey } from "@/lib/settings";
 import {
-  deriveMetrics, diagnose, planFix, needsCloserLook, FixVerifier, RULES,
-  type Finding, type FixStep, type Measurement, type ScanSession, type Verdict,
-} from "@core/CabinetCore";
+  buildCheckPrompt, buildPlanPrompt, fromNorm, headline, parseCheck, parsePlan, toNormBox,
+  type CheckResult, type RepairPlan,
+} from "@core/repairPlan";
 
-type Step = "corners" | "door" | "capture" | "adjust" | "measuring" | "results" | "prepare" | "locate" | "turn" | "done";
+type Phase = "idle" | "box" | "key" | "looking" | "plan" | "step" | "check" | "result" | "cabinet";
 
-const STEP_INDEX: Record<Step, number> = {
-  corners: 0, door: 0, capture: 1, adjust: 1, measuring: 1, results: 2, prepare: 3, locate: 3, turn: 3, done: 4,
-};
-const SCREW_NAME: Record<FixStep["screw"], string> = {
-  side: "side screw", depth: "depth screw", height: "mounting plate screws", mounting: "mounting screws",
+const ACTION_WORD: Record<string, string> = {
+  turn_cw: "↻", turn_ccw: "↺", tighten: "↻", loosen: "↺", pull: "←", push: "→", lift: "↑", press: "●",
 };
 
 export default function ARdlabor() {
   const insets = useSafeAreaInsets();
   const nav = useRef<ViroARSceneNavigator>(null);
   const scene = useSceneState();
-  const [step, setStep] = useState<Step>("corners");
-  const [taps, setTaps] = useState<{ world: V3; screen: Pt }[]>([]);
-  const [world, setWorld] = useState<V3[]>([]);
-  const [door, setDoor] = useState({ w: 0, h: 0 });
-  const [side, setSide] = useState<HingeSide>("left");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [viewPx, setViewPx] = useState({ w: 1, h: 1 });
-  const [shot, setShot] = useState<{ uri: string; size: { width: number; height: number }; corners: Pt[] } | null>(null);
-  const [measurements, setMeasurements] = useState<Measurement[]>([]);
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [fix, setFix] = useState<{ finding: Finding; steps: FixStep[] } | null>(null);
-  const [turn, setTurn] = useState<{ dir: "cw" | "ccw"; quarters: number }>({ dir: "cw", quarters: 1 });
-  const [rescan, setRescan] = useState(false);
-  const [result, setResult] = useState<{ verdict: Verdict; before: number; after: number; message: string } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [startValue, setStartValue] = useState<number | null>(null);
-  const [editSize, setEditSize] = useState(false);
-  const [showGaps, setShowGaps] = useState(false);
-  const [showHinge, setShowHinge] = useState(false);
-  const verifier = useRef<FixVerifier | null>(null);
+  const [request, setRequest] = useState("");
+  const [box, setBox] = useState<Box | null>(null);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [plan, setPlan] = useState<RepairPlan | null>(null);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [reaim, setReaim] = useState(false);
+  const [check, setCheck] = useState<CheckResult | null>(null);
+  const [lookingFor, setLookingFor] = useState<"plan" | "check">("plan");
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => () => sceneStore.set({ corners: [], outline: false, gaps: [], screw: null }), []);
+  useEffect(() => () => sceneStore.set({ markers: [] }), []);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const r = PixelRatio.get();
     setViewPx({ w: e.nativeEvent.layout.width * r, h: e.nativeEvent.layout.height * r });
   };
-  const center = (): Pt => [viewPx.w / 2, viewPx.h / 2];
-  const tapPx = (e: GestureResponderEvent): Pt => [e.nativeEvent.locationX * PixelRatio.get(), e.nativeEvent.locationY * PixelRatio.get()];
 
-  // ---------- 1. door corners ----------
-  async function addCorner(screen: Pt) {
-    if (busy) return;
-    setBusy(true);
-    const hit = await hitTest(screen[0], screen[1]);
-    setBusy(false);
-    if (!hit) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setMessage("No surface yet. Sweep the phone slowly across the door.");
-      return;
-    }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setMessage(null);
-    const next = [...taps, { world: hit, screen }];
-    setTaps(next);
-    sceneStore.set({ corners: next.map((t) => t.world) });
-    if (next.length === 4) {
-      const o = orderWorldCorners(next.map((t) => t.world), next.map((t) => t.screen));
-      setWorld(o.world);
-      setDoor(doorSizeMm(o.world));
-      sceneStore.set({ corners: o.world, outline: true });
-      setStep("door");
-    }
-  }
-
-  function undoCorner() {
-    const next = taps.slice(0, -1);
-    setTaps(next);
-    sceneStore.set({ corners: next.map((t) => t.world), outline: false });
-  }
-
-  function resetCorners() {
-    setTaps([]);
-    setWorld([]);
-    sceneStore.set({ corners: [], outline: false, gaps: [], screw: null });
-    setStep("corners");
-  }
-
-  // ---------- 2. capture ----------
-  async function capture() {
+  // ---------- capture the camera view without our own drawings in it ----------
+  async function captureFrame(): Promise<string> {
     const n = nav.current?.arSceneNavigator;
-    if (!n) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const saved = sceneStore.get();
-      sceneStore.set({ outline: false, gaps: [], corners: [], screw: null }); // keep our lines out of the photo
-      await new Promise((r) => setTimeout(r, 250));
-      const res = await n.takeScreenshot(`ardlabor_${Date.now()}`, false);
-      sceneStore.set({ outline: saved.outline, gaps: saved.gaps, corners: saved.corners, screw: saved.screw });
-      if (!res?.success || !res.url) throw new Error(`screenshot failed (${res?.errorCode})`);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const uri = fileUri(res.url);
-      const size = await new Promise<{ width: number; height: number }>((ok, bad) =>
-        Image.getSize(uri, (width, height) => ok({ width, height }), bad));
-      const sx = size.width / viewPx.w, sy = size.height / viewPx.h;
-      const corners: Pt[] = [];
-      for (const c of world) {
-        const p = await n.project(c);
-        const [x, y] = p?.screenPosition ?? [NaN, NaN];
-        corners.push([x * sx, y * sy]);
-      }
-      setShot({ uri, size, corners });
-      setStep("adjust");
-    } catch (err) {
-      setMessage(`Couldn’t capture the frame: ${String(err)}`);
-    } finally {
-      setBusy(false);
-    }
+    if (!n) throw new Error("AR isn’t ready yet.");
+    const saved = sceneStore.get();
+    sceneStore.set({ markers: [], gaps: [], corners: [], outline: false, screw: null });
+    await new Promise((r) => setTimeout(r, 200));
+    const res = await n.takeScreenshot(`ardlabor_${Date.now()}`, false);
+    sceneStore.set({ markers: saved.markers, gaps: saved.gaps, corners: saved.corners, outline: saved.outline, screw: saved.screw });
+    if (!res?.success || !res.url) throw new Error("Couldn’t capture the camera view.");
+    return res.url;
   }
 
-  // ---------- 3. measure + diagnose ----------
-  async function measure(corners: Pt[]) {
-    if (!shot) return;
-    setStep("measuring");
-    try {
-      const { readings, measurements: fresh } = await measureShot(shot.uri, corners, door.w, door.h, side);
-      const merged = mergeMeasurements(rescan ? measurements : [], fresh);
-      setMeasurements(merged);
-      drawGaps(merged);
-      const session: ScanSession = { version: 1, door: { id: "door", width_mm: door.w, height_mm: door.h, hinge_side: side }, measurements: merged };
-
-      if (rescan && fix && verifier.current) {
-        const value = deriveMetrics(fresh)[fix.finding.recheck] ?? deriveMetrics(merged)[fix.finding.recheck];
-        if (value === undefined) {
-          setMessage("That edge wasn’t in view. Step back and capture again.");
-          setStep("capture");
-          return;
-        }
-        const r = verifier.current.check(value);
-        setResult({ verdict: r.verdict, before: r.before, after: r.after, message: r.message });
-        Haptics.notificationAsync(r.verdict === "pass" ? Haptics.NotificationFeedbackType.Success
-          : r.verdict === "improved" ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning);
-        if (r.verdict === "pass" || r.verdict === "give_up") {
-          sceneStore.set({ screw: null });
-          setStep("done");
-        } else {
-          setTurn({ dir: r.turn, quarters: r.quarterTurns });
-          const sc = sceneStore.get().screw;
-          if (sc) sceneStore.set({ screw: { ...sc, turn: r.turn, label: quarterLabel(r.quarterTurns) } });
-          setStep("turn");
-        }
-        return;
-      }
-      const seen = Object.values(readings).filter((r) => r.mm !== null).length;
-      setMessage(seen === 0 ? "No gaps found. Put the crosses exactly on the corners." : null);
-      setFindings(diagnose(session));
-      setStep("results");
-    } catch (err) {
-      setMessage(`Measurement failed: ${String(err)}`);
-      setStep("capture");
-    }
+  // ---------- 1. ask ----------
+  function submitRequest() {
+    const t = request.trim();
+    if (!t) return;
+    Keyboard.dismiss();
+    setError(null);
+    setPhase("box");
   }
 
-  async function drawGaps(ms: Measurement[]) {
-    const cam = await cameraPosition();
-    const labels: GapLabel[] = [];
-    for (const m of ms) {
-      if (m.mm === null || !(m.id in MEASUREMENTS)) continue;
-      const [edge] = MEASUREMENTS[m.id];
-      const [u, v] = readingAnchorMm(m.id, door.w, door.h, side);
-      const along: Pt = edge === "handle" ? [0, 15] : [15, 0];
-      const outward: Pt = edge === "top" ? [0, -30] : edge === "bottom" ? [0, 30] : [side === "left" ? 40 : -40, 0];
-      const P = (du: number, dv: number, out = 0.004) => doorPoint(world, u + du, v + dv, door.w, door.h, out, cam ?? undefined);
-      const t = m.target ?? RULES.gapTarget;
-      labels.push({
-        id: m.id, from: P(-along[0], -along[1]), to: P(along[0], along[1]), labelPos: P(outward[0], outward[1], 0.01),
-        text: `${m.mm.toFixed(1)} mm`, ok: m.mm >= t[0] && m.mm <= t[1],
-      });
-    }
-    sceneStore.set({ gaps: labels });
-  }
-
-  // ---------- 4. fix ----------
-  function startFix(f: Finding) {
-    const steps = planFix(f);
-    const adjust = steps[steps.length - 1];
-    const start = deriveMetrics(measurements)[f.recheck] ?? 0;
-    verifier.current = new FixVerifier(start, f.recheckTarget, adjust.turn ?? "cw");
-    setStartValue(start);
-    setFix({ finding: f, steps });
-    setTurn({ dir: adjust.turn ?? "cw", quarters: adjust.quarterTurns ?? 1 });
-    setResult(null);
-    setMessage(null);
-    setStep("prepare");
-  }
-
-  async function markScrew(screen: Pt) {
-    if (busy || !fix) return;
-    setBusy(true);
-    const hit = await hitTest(screen[0], screen[1]);
-    setBusy(false);
-    if (!hit) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setMessage("Couldn’t mark that. Move a bit closer.");
+  async function onBoxDrawn(b: Box) {
+    setBox(b);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const key = await getApiKey();
+    if (!key) {
+      setPhase("key");
       return;
     }
+    runPlan(b, key);
+  }
+
+  async function saveKey() {
+    if (keyDraft.trim().length < 20) {
+      setError("That doesn’t look like a full key. Copy the whole thing from AI Studio.");
+      return;
+    }
+    await setApiKey(keyDraft);
+    setKeyDraft("");
+    setError(null);
+    runPlan(box, keyDraft.trim());
+  }
+
+  // ---------- 2. look + plan ----------
+  async function runPlan(b: Box | null, key?: string) {
+    const apiKey = key ?? (await getApiKey());
+    if (!apiKey) return setPhase("key");
+    setLookingFor("plan");
+    setPhase("looking");
+    setError(null);
+    try {
+      const r = PixelRatio.get();
+      const nbox = b ? toNormBox(b.x0 * r, b.y0 * r, b.x1 * r, b.y1 * r, viewPx.w, viewPx.h) : null;
+      const shot = await captureFrame();
+      const p = parsePlan(await askGemini(apiKey, shot, buildPlanPrompt(request, nbox)));
+      setPlan(p);
+      setStepIdx(0);
+      await placeMarkers(p, 0);
+      Haptics.notificationAsync(p.safety.level === "stop" ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success);
+      setPhase("plan");
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  function fail(e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    setError(msg);
+    if (e instanceof GeminiError && e.kind === "key") setPhase("key");
+    else setPhase(plan ? "plan" : "box");
+  }
+
+  /** Pin every step that has a point onto the real object. */
+  async function placeMarkers(p: RepairPlan, active: number) {
+    const markers: StepMarker[] = [];
+    for (let i = 0; i < p.steps.length; i++) {
+      const pt = p.steps[i].point;
+      if (!pt) continue;
+      const [x, y] = fromNorm(pt, viewPx.w, viewPx.h);
+      const hit = await hitTest(x, y);
+      if (hit) markers.push({ id: `s${i}`, pos: hit, label: `${i + 1}`, state: i === active ? "active" : "idle" });
+    }
+    sceneStore.set({ markers });
+  }
+
+  function showStep(i: number) {
+    setStepIdx(i);
+    const action = plan?.steps[i]?.action ?? "";
+    sceneStore.set({
+      markers: sceneStore.get().markers.map((m) => {
+        const n = Number(m.id.slice(1));
+        return { ...m, state: n === i ? "active" : "idle", label: n === i ? `${n + 1} ${ACTION_WORD[action] ?? ""}`.trim() : `${n + 1}` };
+      }),
+    });
+  }
+
+  async function moveMarker(e: GestureResponderEvent) {
+    const r = PixelRatio.get();
+    const hit = await hitTest(e.nativeEvent.locationX * r, e.nativeEvent.locationY * r);
+    setReaim(false);
+    if (!hit) return setError("Couldn’t pin it there. Move a little closer and try again.");
+    setError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setMessage(null);
-    sceneStore.set({ screw: { pos: hit, turn: turn.dir, label: quarterLabel(turn.quarters) } });
-    setStep("turn");
+    const others = sceneStore.get().markers.filter((m) => m.id !== `s${stepIdx}`);
+    sceneStore.set({ markers: [...others, { id: `s${stepIdx}`, pos: hit, label: `${stepIdx + 1}`, state: "active" }] });
   }
 
-  function check() {
-    setRescan(true);
-    setMessage(null);
-    setStep("capture");
+  // ---------- 3. check the fix ----------
+  async function runCheck() {
+    const apiKey = await getApiKey();
+    if (!apiKey || !plan) return setPhase("key");
+    setLookingFor("check");
+    setPhase("looking");
+    try {
+      const shot = await captureFrame();
+      const c = parseCheck(await askGemini(apiKey, shot, buildCheckPrompt(plan)));
+      setCheck(c);
+      if (!c.fixed && c.point) {
+        const [x, y] = fromNorm(c.point, viewPx.w, viewPx.h);
+        const hit = await hitTest(x, y);
+        sceneStore.set({ markers: hit ? [{ id: "issue", pos: hit, label: "!", state: "issue" }] : [] });
+      } else {
+        sceneStore.set({ markers: [] });
+      }
+      Haptics.notificationAsync(c.fixed ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning);
+      setPhase("result");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase("check");
+    }
   }
 
-  function restart() {
-    verifier.current = null;
-    setFix(null);
-    setFindings([]);
-    setMeasurements([]);
-    setRescan(false);
-    setResult(null);
-    setShot(null);
-    setMessage(null);
-    resetCorners();
+  function reset() {
+    sceneStore.set({ markers: [], gaps: [], corners: [], outline: false, screw: null });
+    setPlan(null);
+    setCheck(null);
+    setBox(null);
+    setRequest("");
+    setError(null);
+    setReaim(false);
+    setPhase("idle");
   }
 
   // ---------- render ----------
-  if (step === "adjust" && shot) {
-    return (
-      <View style={[styles.fill, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <CornerEditor uri={shot.uri} imageSize={shot.size} corners={shot.corners} onConfirm={measure} onRetake={() => setStep("capture")} />
-      </View>
-    );
-  }
-
-  const adjust = fix?.steps[fix.steps.length - 1];
-  const aiming = step === "corners" || step === "locate";
-  const onTap = step === "corners" ? (e: GestureResponderEvent) => addCorner(tapPx(e))
-    : step === "locate" ? (e: GestureResponderEvent) => markScrew(tapPx(e)) : null;
-  const top = findings[0];
-  const hingeWord = (h: FixStep["hinge"]) => (h === "hinge_top" ? "top" : "bottom");
+  const step = plan?.steps[stepIdx];
+  const hasMarker = scene.markers.some((m) => m.id === `s${stepIdx}`);
 
   return (
     <View style={styles.fill} onLayout={onLayout}>
       <ViroARSceneNavigator ref={nav} initialScene={{ scene: CabinetScene }} style={styles.fill} depthEnabled />
-      {onTap && <Pressable style={StyleSheet.absoluteFill} onPress={onTap} />}
-      {aiming && <Reticle label={step === "corners" ? `Corner ${taps.length + 1} of 4` : undefined} />}
 
-      <Progress current={STEP_INDEX[step]} top={insets.top + 10} />
-      {scene.tracking !== "normal" && (
-        <View style={[styles.tracking, { top: insets.top + 24 }]} pointerEvents="none">
-          {scene.tracking === "unavailable" ? <ActivityIndicator color={C.accent} size="small" /> : null}
-          <Text style={styles.trackingText}>{scene.tracking === "limited" ? "Move slowly" : "Starting AR…"}</Text>
-        </View>
+      {phase === "cabinet" ? (
+        <CabinetFlow nav={nav} viewPx={viewPx} startBox={box} intro={plan ? headline(plan) + "." : undefined}
+          onExit={() => { setPhase(plan ? "plan" : "idle"); }} />
+      ) : (
+        <>
+          {phase === "box" && <BoxDraw box={null} onDraw={onBoxDrawn} hint="Draw a box around it" />}
+          {reaim && <Pressable style={StyleSheet.absoluteFill} onPress={moveMarker} />}
+
+          {phase === "idle" && (
+            <View style={[styles.center, styles.dim]} pointerEvents="box-none">
+              <TextInput
+                style={styles.ask}
+                value={request}
+                onChangeText={setRequest}
+                placeholder="What should I help you with?"
+                placeholderTextColor="rgba(255,255,255,0.92)"
+                multiline
+                submitBehavior="blurAndSubmit"
+                returnKeyType="send"
+                onSubmitEditing={submitRequest}
+                textAlign="center"
+                selectionColor={C.signal}
+              />
+              {request.trim().length > 0 && <IconBtn label="Continue" onPress={submitRequest} />}
+            </View>
+          )}
+
+          {phase !== "idle" && (
+            <LinearGradient pointerEvents="none" colors={["rgba(0,0,0,0.5)", "rgba(0,0,0,0)"]} style={[styles.topFade, { height: insets.top + 96 }]} />
+          )}
+          {phase !== "idle" && (
+            <View style={[styles.topBar, { top: insets.top + 14, left: insets.left + 28, right: insets.right + 20 }]} pointerEvents="box-none">
+              <View style={{ flexShrink: 1, gap: 2 }} pointerEvents="none">
+                <Text style={styles.requestText} numberOfLines={1}>{request}</Text>
+                {scene.tracking === "limited" && <Text style={styles.trackingText}>Tracking is weak. Move the phone slowly.</Text>}
+              </View>
+              <IconBtn label="Start over" onPress={reset} />
+            </View>
+          )}
+
+          {["key", "looking", "plan", "step", "check", "result"].includes(phase) || (phase === "box" && error) ? (
+            <View style={[styles.bottom, { paddingLeft: insets.left, paddingRight: insets.right }]} pointerEvents="box-none">
+              <Sheet bottomInset={insets.bottom}>
+                {error && <Notice tone="bad">{error}</Notice>}
+
+                {phase === "looking" && (
+                  <Row gap={10}>
+                    <ActivityIndicator color={C.text} size="small" />
+                    <Body>{lookingFor === "plan" ? "Looking. Hold the phone still." : "Checking. Hold the phone still."}</Body>
+                  </Row>
+                )}
+
+                {phase === "key" && (
+                  <>
+                    <Title>Add your Gemini key</Title>
+                    <Small>Get a free key at aistudio.google.com/apikey. It is stored only on this phone.</Small>
+                    <Row>
+                      <TextInput style={styles.input} value={keyDraft} onChangeText={setKeyDraft} placeholder="Paste key"
+                        placeholderTextColor={C.faint} autoCapitalize="none" autoCorrect={false} secureTextEntry selectionColor={C.signal} />
+                      <Btn label="Save key" onPress={saveKey} />
+                    </Row>
+                  </>
+                )}
+
+                {phase === "plan" && plan && (
+                  <>
+                    <Bubble>{headline(plan)}</Bubble>
+                    {plan.safety.level === "stop" ? (
+                      <>
+                        <Body>{plan.safety.reason}</Body>
+                        <Row><Btn label="Ask something else" onPress={reset} /></Row>
+                      </>
+                    ) : plan.confidence < 0.4 || plan.steps.length === 0 ? (
+                      <Row><Btn label="Try again closer" onPress={() => { setError(null); setPhase("box"); }} /></Row>
+                    ) : (
+                      <>
+                        {plan.safety.level === "caution" && plan.safety.reason ? <Notice>{plan.safety.reason}</Notice> : null}
+                        <Body>
+                          {plan.steps.length} steps.{plan.tools.length > 0 ? ` You’ll need ${joinWords(plan.tools)}.` : ""}
+                        </Body>
+                        <Row>
+                          <Btn label="Start" onPress={() => { showStep(0); setPhase("step"); }} />
+                          {plan.specialTool === "cabinet_gap" && (
+                            <LinkBtn label="Measure the gaps precisely" onPress={() => setPhase("cabinet")} />
+                          )}
+                        </Row>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {phase === "step" && plan && step && (
+                  <>
+                    <Small>Step {stepIdx + 1} of {plan.steps.length}</Small>
+                    <Title>{step.text}</Title>
+                    {!hasMarker && <Small>{reaim ? "Tap the spot on the screen." : "Not pinned yet. Choose Move marker, then tap the spot."}</Small>}
+                    <Row>
+                      <Btn label={stepIdx === plan.steps.length - 1 ? "Done" : "Next"}
+                        onPress={() => (stepIdx === plan.steps.length - 1 ? setPhase("check") : showStep(stepIdx + 1))} />
+                      <IconBtn label="Back" onPress={() => (stepIdx === 0 ? setPhase("plan") : showStep(stepIdx - 1))} />
+                      <IconBtn label="Move marker" onPress={() => setReaim(true)} />
+                    </Row>
+                  </>
+                )}
+
+                {phase === "check" && (
+                  <>
+                    <Title>Point the camera at it, then check.</Title>
+                    <Row>
+                      <Btn label="Check my fix" onPress={runCheck} />
+                      <IconBtn label="Back" onPress={() => setPhase("step")} />
+                    </Row>
+                  </>
+                )}
+
+                {phase === "result" && check && (
+                  <>
+                    <Bubble>{check.feedback}</Bubble>
+                    {check.fixed ? (
+                      <Row><Btn label="Fix something else" onPress={reset} /></Row>
+                    ) : (
+                      <Row>
+                        <Btn label="Look again" onPress={() => runPlan(box)} />
+                        <Btn label="Show steps again" kind="secondary" onPress={() => { if (plan) placeMarkers(plan, 0); showStep(0); setPhase("step"); }} />
+                      </Row>
+                    )}
+                  </>
+                )}
+              </Sheet>
+            </View>
+          ) : null}
+        </>
       )}
-
-      <View style={styles.bottom} pointerEvents="box-none">
-        <Sheet bottomInset={insets.bottom}>
-          {message && <Notice>{message}</Notice>}
-
-          {step === "corners" && (
-            <>
-              <Title>Aim at a door corner</Title>
-              <Row>
-                {taps.length > 0 && <IconBtn icon="undo" label="Undo" onPress={undoCorner} />}
-                <Btn label={busy ? "…" : `Add corner ${taps.length + 1}/4`} onPress={() => addCorner(center())} disabled={busy} />
-              </Row>
-            </>
-          )}
-
-          {step === "door" && (
-            <>
-              <Row>
-                <Title>{door.w} × {door.h} mm</Title>
-                <View style={{ flex: 1 }} />
-                <LinkBtn label="Edit" open={editSize} onPress={() => setEditSize(!editSize)} />
-              </Row>
-              {editSize && (
-                <Row>
-                  <NumField label="Width" value={door.w} onChange={(w) => setDoor({ ...door, w })} />
-                  <NumField label="Height" value={door.h} onChange={(h) => setDoor({ ...door, h })} />
-                </Row>
-              )}
-              <Row>
-                <Small>Hinges</Small>
-                <Toggle options={[{ value: "left", label: "Left" }, { value: "right", label: "Right" }]} value={side} onChange={setSide} />
-              </Row>
-              <Row>
-                <IconBtn icon="restart" label="Redo corners" onPress={resetCorners} />
-                <Btn label="Scan gaps" onPress={() => setStep("capture")} disabled={door.w < 50 || door.h < 50} />
-              </Row>
-            </>
-          )}
-
-          {step === "capture" && (
-            <>
-              <Title>{rescan ? "Close the door, then capture" : "Face the door straight on"}</Title>
-              <Btn label={busy ? "Capturing…" : "Capture"} icon="camera" onPress={capture} disabled={busy} />
-            </>
-          )}
-
-          {step === "measuring" && (
-            <Row><ActivityIndicator color={C.accent} /><Body>Measuring…</Body></Row>
-          )}
-
-          {step === "results" && (
-            <>
-              {top ? (
-                <>
-                  <Title>{top.summary.replace(/\.$/, "")}</Title>
-                  <Small>{hingeWord(top.hinge)} hinge · {SCREW_NAME[top.screw]} · {Math.round(top.confidence * 100)}% sure</Small>
-                  {showGaps && <DoorGapDiagram measurements={measurements} side={side} />}
-                  <LinkBtn label={showGaps ? "Hide gaps" : "See all gaps"} open={showGaps} onPress={() => setShowGaps(!showGaps)} />
-                  {needsCloserLook(top)
-                    ? <Btn label="Look closer" icon="magnify-plus" onPress={() => setStep("capture")} />
-                    : <Btn label="Fix it" icon="screwdriver" onPress={() => startFix(top)} />}
-                </>
-              ) : (
-                <>
-                  <Title>Gaps look even</Title>
-                  <Btn label="Scan again" icon="camera" kind="secondary" onPress={() => setStep("capture")} />
-                </>
-              )}
-            </>
-          )}
-
-          {step === "prepare" && fix && (
-            <>
-              <Title>{fix.steps[0].text}</Title>
-              <Btn label="Done" onPress={() => setStep("locate")} />
-            </>
-          )}
-
-          {step === "locate" && adjust && (
-            <>
-              <Title>Aim at the {SCREW_NAME[adjust.screw]}, {hingeWord(adjust.hinge)} hinge</Title>
-              {showHinge && <HingeDiagram screw={adjust.screw} />}
-              <LinkBtn label="Which screw?" open={showHinge} onPress={() => setShowHinge(!showHinge)} />
-              <Btn label={busy ? "…" : "Mark screw"} icon="target" onPress={() => markScrew(center())} disabled={busy} />
-            </>
-          )}
-
-          {step === "turn" && adjust && fix && (
-            <>
-              <Row gap={14}>
-                <TurnBadge dir={turn.dir} quarters={turn.quarters} />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Title>{quarterLabel(turn.quarters)} {turn.dir === "cw" ? "clockwise" : "anticlockwise"}</Title>
-                  {result && (
-                    <Small color={result.verdict === "improved" ? C.ok : C.warn}>
-                      {result.before.toFixed(1)} → {result.after.toFixed(1)} mm · {result.verdict === "improved" ? "better" : result.verdict === "worse" ? "worse, reversed" : "no change"}
-                    </Small>
-                  )}
-                </View>
-              </Row>
-              <Row>
-                <IconBtn icon="target" label="Re-mark screw" onPress={() => setStep("locate")} />
-                <Btn label="Check" icon="check" onPress={check} />
-              </Row>
-            </>
-          )}
-
-          {step === "done" && (
-            <>
-              <Title>{result?.verdict === "pass" ? "Fixed" : "Time for a carpenter"}</Title>
-              {result && <Small color={result.verdict === "pass" ? C.ok : C.warn}>{(startValue ?? result.before).toFixed(1)} → {result.after.toFixed(1)} mm</Small>}
-              <Btn label="Scan another door" onPress={restart} />
-            </>
-          )}
-        </Sheet>
-      </View>
     </View>
   );
 }
 
-function quarterLabel(q: number) {
-  return q >= 2 ? "½ turn" : "¼ turn";
+function joinWords(a: string[]) {
+  const w = a.map((x) => x.charAt(0).toLowerCase() + x.slice(1));
+  return w.length <= 1 ? w.join("") : `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}`;
 }
 
-function NumField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
-  return (
-    <View style={{ flex: 1, gap: 4 }}>
-      <Small>{label}</Small>
-      <TextInput style={styles.input} keyboardType="number-pad" defaultValue={String(value)} selectTextOnFocus
-        onChangeText={(t) => { const n = parseInt(t, 10); if (!Number.isNaN(n)) onChange(n); }} />
-    </View>
-  );
-}
+const shadow = { textShadowColor: "rgba(0,0,0,0.55)", textShadowRadius: 6, textShadowOffset: { width: 0, height: 1 } };
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: "#000" },
-  tracking: { position: "absolute", alignSelf: "center", flexDirection: "row", gap: 8, alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.7)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
-  trackingText: { color: C.accent, fontSize: 13, fontWeight: "600" },
+  center: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, gap: 8 },
+  ask: { color: "#fff", ...T.display, textAlign: "center", width: "100%", maxWidth: 520, ...shadow },
+  dim: { backgroundColor: "rgba(0,0,0,0.22)" },
+  topFade: { position: "absolute", top: 0, left: 0, right: 0 },
+  topBar: { position: "absolute", flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 16 },
+  requestText: { color: C.sub, ...T.small, ...shadow, maxWidth: 460 },
+  trackingText: { color: C.warn, ...T.small, ...shadow },
   bottom: { position: "absolute", left: 0, right: 0, bottom: 0 },
-  finding: { gap: 8, padding: 12, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.05)" },
-  findingTop: { borderLeftWidth: 3, borderLeftColor: C.bad },
-  findingTitle: { color: C.text, fontSize: 17, fontWeight: "800", flex: 1 },
-  input: { backgroundColor: "#2c2c2e", color: C.text, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 17,
-    fontWeight: "700", fontVariant: ["tabular-nums"] },
+  input: { width: 300, height: 44, borderBottomWidth: 1, borderBottomColor: C.line, color: C.text, ...T.body, paddingHorizontal: 0 },
 });

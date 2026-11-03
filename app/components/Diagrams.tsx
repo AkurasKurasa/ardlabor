@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import type { Measurement, FixStep } from "@core/CabinetCore";
 import { RULES } from "@core/CabinetCore";
-import { C, Icon } from "./ui";
+import { C, Icon, F } from "./ui";
 
 /** A small door with each gap reading placed where it was measured. */
 export function DoorGapDiagram({ measurements, side }: { measurements: Measurement[]; side: "left" | "right" }) {
@@ -100,10 +100,9 @@ const d = StyleSheet.create({
   door: { flex: 1, borderWidth: 2, borderColor: "rgba(255,255,255,0.55)", borderRadius: 4, backgroundColor: "rgba(255,255,255,0.04)" },
   handle: { position: "absolute", top: "45%", width: 4, height: 26, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.5)" },
   hinge: { position: "absolute", width: 6, height: 16, borderRadius: 2, backgroundColor: C.accent },
-  chip: { position: "absolute", minWidth: 44, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1.5,
-    backgroundColor: "#1c1c1e", alignItems: "center" },
-  chipText: { fontSize: 13, fontWeight: "800", fontVariant: ["tabular-nums"] },
-  caption: { color: C.faint, fontSize: 12 },
+  chip: { position: "absolute", minWidth: 44, alignItems: "center", borderWidth: 0 },
+  chipText: { fontSize: 13, fontFamily: F.semibold, fontVariant: ["tabular-nums"] },
+  caption: { color: C.faint, fontFamily: F.regular, fontSize: 12 },
 });
 
 const h = StyleSheet.create({
@@ -113,23 +112,23 @@ const h = StyleSheet.create({
   arm: { position: "absolute", left: 40, top: 34, width: 150, height: 14, backgroundColor: "#8e8e95", borderRadius: 4 },
   door: { position: "absolute", right: 0, top: 0, bottom: 24, width: 16, backgroundColor: "#4a4a50", borderRadius: 2 },
   cup: { position: "absolute", right: 10, top: 26, width: 30, height: 30, borderRadius: 15, backgroundColor: "#6e6e75" },
-  tag: { position: "absolute", bottom: -20, width: 90, color: C.faint, fontSize: 10 },
+  tag: { position: "absolute", bottom: -20, width: 90, color: C.faint, fontFamily: F.regular, fontSize: 10 },
   screwWrap: { position: "absolute", top: 31, alignItems: "center", width: 40, marginLeft: -12 },
   screw: { width: 18, height: 18, borderRadius: 9, backgroundColor: "#c7c7cc", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "transparent" },
   screwOn: { backgroundColor: C.accent, borderColor: "#fff", transform: [{ scale: 1.25 }] },
   slot: { width: 10, height: 2, backgroundColor: "#636366" },
-  label: { color: C.faint, fontSize: 11, fontWeight: "700", marginTop: 26, position: "absolute" },
+  label: { color: C.faint, fontSize: 11, fontFamily: F.semibold, marginTop: 26, position: "absolute" },
 });
 
 const t = StyleSheet.create({
   badge: { width: 76, height: 76, borderRadius: 38, backgroundColor: C.accent, alignItems: "center", justifyContent: "center" },
-  amount: { position: "absolute", bottom: 8, right: 10, fontSize: 16, fontWeight: "900", color: C.accentInk },
+  amount: { position: "absolute", bottom: 8, right: 10, fontSize: 16, fontFamily: F.semibold, color: C.accentInk },
 });
 
 const v = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 14, padding: 12 },
   cell: { alignItems: "center" },
-  num: { color: C.text, fontSize: 26, fontWeight: "800", fontVariant: ["tabular-nums"] },
-  target: { color: C.sub, fontSize: 18, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  cap: { color: C.faint, fontSize: 11 },
+  num: { color: C.text, fontSize: 26, fontFamily: F.semibold, fontVariant: ["tabular-nums"] },
+  target: { color: C.sub, fontSize: 18, fontFamily: F.semibold, fontVariant: ["tabular-nums"] },
+  cap: { color: C.faint, fontFamily: F.regular, fontSize: 11 },
 });

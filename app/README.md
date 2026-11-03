@@ -37,10 +37,12 @@ With Android Studio installed and the phone plugged in over USB with USB debuggi
 ViroReact can't run in Expo Go, so a build is always needed.
 
 ## How to use it
-1. Aim the crosshair at each of the door's 4 corners and press **Add corner** (or tap the corner).
-   AR measures the door size (you can correct it).
-2. Pick the hinge side, then **Capture** straight-on so the gaps look like dark lines.
-3. Drag the yellow crosses onto the exact corners, then **Measure gaps**.
-4. Read the diagnosis, press **Fix this**, open the door, aim at the screw it names and press **Mark screw**.
-5. Turn the amount shown, close the door, **Check**. It re-measures and tells you to keep going,
-   reverse, or stop.
+1. Open the app. You see the camera and "What should I help you with?". Tap it and type or speak
+   (mic on the keyboard), e.g. "help me fix this wobbly chair".
+2. Draw a box around the thing with your finger.
+3. The first time, paste your free Gemini API key (aistudio.google.com/apikey). It's stored on the phone only.
+4. ARdlabor looks at what you boxed, tells you what it thinks is wrong, and pins numbered steps on the real object.
+5. Go through the steps (move a marker with the target button if it's off), then **Check my fix**.
+6. Dangerous jobs (gas, wiring in walls/outlets, inside microwaves/TVs, car brakes, structural) are refused
+   with who to call instead.
+7. For a sagging or uneven cabinet door, "Measure the gaps precisely" opens the mm measuring tool.

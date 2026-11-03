@@ -24,7 +24,6 @@ const STEP_INDEX: Record<Step, number> = {
 const SCREW_NAME: Record<FixStep["screw"], string> = {
   side: "side screw", depth: "depth screw", height: "mounting plate screws", mounting: "mounting screws",
 };
-const CORNER_HINT = "Drag each cross onto the exact corner of the door face.";
 
 export default function ARdlaborWeb() {
   const insets = useSafeAreaInsets();
@@ -148,7 +147,8 @@ export default function ARdlaborWeb() {
     return (
       <View style={[styles.fill, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <CornerEditor uri={photo.uri} imageSize={photo.size} corners={corners} onConfirm={measure}
-          onRetake={() => choosePhoto(rescan)} hint={CORNER_HINT} notice={message} />
+          onRetake={() => choosePhoto(rescan)} />
+        {message && <View style={styles.cornerNotice} pointerEvents="none"><Notice>{message}</Notice></View>}
       </View>
     );
   }
@@ -294,6 +294,7 @@ function NumField({ label, onChange }: { label: string; onChange: (n: number) =>
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: "#000" },
   backdrop: { opacity: 0.45 },
+  cornerNotice: { position: "absolute", top: 16, left: 16, right: 316, maxWidth: 480 }, // clear of CornerEditor's 300 px side bar
   intro: { flex: 1, maxWidth: 520, width: "100%", alignSelf: "center", justifyContent: "center", gap: 10, padding: 24, paddingBottom: 320 },
   bottom: { position: "absolute", left: 0, right: 0, bottom: 0 },
   column: { width: "100%", maxWidth: 520, alignSelf: "center" },

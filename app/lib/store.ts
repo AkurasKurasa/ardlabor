@@ -12,8 +12,16 @@ export interface GapLabel {
   ok: boolean;
 }
 
+export interface StepMarker {
+  id: string;
+  pos: V3;
+  label: string;
+  state: "active" | "idle" | "issue";
+}
+
 /** Everything the AR scene draws. The screen writes it; the scene only reads it. */
 export interface SceneState {
+  markers: StepMarker[];
   corners: V3[];
   outline: boolean;
   gaps: GapLabel[];
@@ -21,7 +29,7 @@ export interface SceneState {
   tracking: "normal" | "limited" | "unavailable";
 }
 
-let state: SceneState = { corners: [], outline: false, gaps: [], screw: null, tracking: "unavailable" };
+let state: SceneState = { markers: [], corners: [], outline: false, gaps: [], screw: null, tracking: "unavailable" };
 const listeners = new Set<() => void>();
 
 export const sceneStore = {
