@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Image, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent } from "react-native";
-import { Btn, C, Eyebrow } from "./ui";
+import { Btn, C, Eyebrow, Notice } from "./ui";
 import type { Pt } from "@core/gapscan";
 
 type Props = {
@@ -9,13 +9,17 @@ type Props = {
   corners: Pt[]; // in image pixels
   onConfirm: (corners: Pt[]) => void;
   onRetake: () => void;
+  hint?: string;
+  notice?: string | null;
 };
+
+const AR_HINT = "Drag each cross onto the exact corner of the door face. Corners outside the picture stay where AR put them.";
 
 const HANDLE = 44;
 type Drag = { i: number; start: Pt; x0: number; y0: number } | null;
 
 /** Shows the captured frame with the 4 door corners as handles you can drag onto the exact corner. */
-export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRetake }: Props) {
+export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRetake, hint = AR_HINT, notice }: Props) {
   const [pts, setPts] = useState<Pt[]>(corners);
   const [box, setBox] = useState({ w: 1, h: 1 });
   const [drag, setDrag] = useState<Drag>(null);
@@ -58,7 +62,8 @@ export default function CornerEditor({ uri, imageSize, corners, onConfirm, onRet
       </View>
       <View style={styles.bar}>
         <Eyebrow icon="vector-square-edit">Check the corners</Eyebrow>
-        <Text style={styles.hint}>Drag each cross onto the exact corner of the door face. Corners outside the picture stay where AR put them.</Text>
+        {notice && <Notice>{notice}</Notice>}
+        <Text style={styles.hint}>{hint}</Text>
         <View style={styles.row}>
           <Btn label="Retake" icon="camera-retake" kind="secondary" onPress={onRetake} />
           <Btn label="Measure gaps" icon="ruler" onPress={() => onConfirm(pts)} />

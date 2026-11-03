@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test core/tests/core.test.ts core/tests/gapscan.test.ts core/tests/intent.test.ts",
+    "test": "node --experimental-strip-types --test core/tests/core.test.ts core/tests/gapscan.test.ts core/tests/intent.test.ts core/tests/scan.test.ts",
     "test:py": "cd tools/scan_bake && python test_gapscan.py",
     "app:typecheck": "cd app && npx tsc --noEmit"
   }
