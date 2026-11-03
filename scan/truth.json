@@ -1,0 +1,10 @@
+{
+  "door_width_mm": 0,
+  "door_height_mm": 0,
+  "gap_top_hinge": 0,
+  "gap_top_handle": 0,
+  "gap_side_top": 0,
+  "gap_side_bottom": 0,
+  "flush_top_handle": 0,
+  "hinge_side": "left"
+}
