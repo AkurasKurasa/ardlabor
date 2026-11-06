@@ -1,0 +1,42 @@
+# Builds an unsigned iPhone app (.ipa) on GitHub's Mac servers. Download it from the run's "Artifacts",
+# then sign and install it from Windows with Sideloadly (a free Apple ID works; re-install every 7 days).
+name: iOS IPA (unsigned)
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: app/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - run: npx tsc --noEmit
+      - run: xcodebuild -version
+      - run: npx expo prebuild --platform ios --no-install
+      - run: pod install
+        working-directory: app/ios
+      # no signing here: Sideloadly re-signs the app with the user's own Apple ID on install
+      - run: >-
+          xcodebuild -quiet -workspace ARdlabor.xcworkspace -scheme ARdlabor -configuration Release
+          -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+        working-directory: app/ios
+      - run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/ARdlabor.app Payload/
+          zip -qry ARdlabor.ipa Payload
+          ls -lh ARdlabor.ipa
+        working-directory: app/ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ardlabor-ipa
+          path: app/ios/ARdlabor.ipa
