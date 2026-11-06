@@ -1,0 +1,55 @@
+# Publishes the web version (photo flow, no AR) to GitHub Pages: https://akuraskurasa.github.io/ardlabor/
+name: Web (GitHub Pages)
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "core/**", "package.json", ".github/workflows/pages.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# a newer push replaces a deploy that is still running
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: app/yarn.lock
+      - run: yarn install --frozen-lockfile
+        working-directory: app
+      # nothing goes live unless the tests and the type check pass
+      - run: npm test
+      - run: npx tsc --noEmit
+        working-directory: app
+      - run: npx expo export --platform web --output-dir dist
+        working-directory: app
+        env:
+          EXPO_BASE_URL: /${{ github.event.repository.name }}
+      # single-page app: send unknown paths back to the app instead of GitHub's 404
+      - run: cp dist/index.html dist/404.html
+        working-directory: app
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
